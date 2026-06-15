@@ -2,184 +2,165 @@ import streamlit as st
 import easyocr
 import cv2
 import numpy as np
-from PIL import Image
 import pandas as pd
+from PIL import Image
+import re
 
-# --------------------------------------------------
-# Page Config
-# --------------------------------------------------
 st.set_page_config(
     page_title="AI Medical Prescription Reader",
     page_icon="💊",
     layout="wide"
 )
 
-# --------------------------------------------------
-# Load OCR Model
-# --------------------------------------------------
 @st.cache_resource
 def load_reader():
     return easyocr.Reader(['en'], gpu=False)
 
 reader = load_reader()
 
-# --------------------------------------------------
-# Medicine Database
-# --------------------------------------------------
 medicine_database = {
-    "paracetamol": {
-        "usage": "Pain relief and fever reduction",
-        "dosage": "500mg every 4-6 hours",
-        "warning": "Do not exceed 4000mg/day"
-    },
-    "amoxicillin": {
-        "usage": "Antibiotic for bacterial infections",
-        "dosage": "500mg three times daily",
-        "warning": "Complete the full prescribed course"
-    },
-    "ibuprofen": {
-        "usage": "Pain, inflammation, fever",
-        "dosage": "200-400mg every 6 hours",
-        "warning": "Take after meals"
-    },
-    "cetirizine": {
-        "usage": "Allergy treatment",
-        "dosage": "10mg once daily",
-        "warning": "May cause drowsiness"
-    },
-    "azithromycin": {
-        "usage": "Antibiotic",
-        "dosage": "500mg once daily",
-        "warning": "Take as prescribed"
-    },
-    "metformin": {
-        "usage": "Diabetes management",
-        "dosage": "500mg twice daily",
-        "warning": "Take with food"
-    }
+    "paracetamol": ["Pain Relief", "500mg every 4-6 hours"],
+    "amoxicillin": ["Antibiotic", "500mg three times daily"],
+    "ibuprofen": ["Pain and Inflammation", "200-400mg every 6 hours"],
+    "cetirizine": ["Allergy", "10mg daily"],
+    "azithromycin": ["Antibiotic", "500mg daily"],
+    "metformin": ["Diabetes", "500mg twice daily"],
+    "diclofenac": ["Pain Relief", "As prescribed"],
+    "ultrafen": ["Pain Relief", "As prescribed"],
+    "cartilix": ["Joint Support", "As prescribed"],
+    "relentus": ["Muscle Relaxant", "As prescribed"],
+    "panadol": ["Pain Relief", "As prescribed"],
+    "augmentin": ["Antibiotic", "As prescribed"],
+    "brufen": ["Pain Relief", "As prescribed"],
+    "calpol": ["Fever", "As prescribed"],
+    "flagyl": ["Infection", "As prescribed"],
+    "dolo": ["Pain Relief", "As prescribed"],
+    "napa": ["Pain Relief", "As prescribed"]
 }
 
-# --------------------------------------------------
-# OCR Function
-# --------------------------------------------------
-def perform_ocr(image):
-    try:
-        img_array = np.array(image)
+def preprocess_image(image):
+    img = np.array(image)
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    gray = cv2.equalizeHist(gray)
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    thresh = cv2.adaptiveThreshold(
+        gray,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        11,
+        2
+    )
+    return thresh
 
-        if len(img_array.shape) == 3:
-            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-        else:
-            gray = img_array
+def extract_text(image):
+    processed = preprocess_image(image)
 
-        result = reader.readtext(gray)
+    results = reader.readtext(
+        processed,
+        detail=1,
+        paragraph=True
+    )
 
-        extracted_text = ""
+    full_text = ""
+    rows = []
 
-        for item in result:
-            extracted_text += item[1] + "\n"
+    for item in results:
+        text = item[1]
+        conf = round(item[2] * 100, 2)
 
-        return extracted_text
+        full_text += text + "\n"
 
-    except Exception as e:
-        st.error(f"OCR Error: {e}")
-        return ""
+        rows.append({
+            "Detected Text": text,
+            "Confidence (%)": conf
+        })
 
-# --------------------------------------------------
-# Extract Medicines
-# --------------------------------------------------
-def extract_medicines(text):
+    return full_text, pd.DataFrame(rows)
 
-    medicines_found = []
+def detect_medicines(text):
+    detected = []
 
     text = text.lower()
 
-    for medicine in medicine_database.keys():
-        if medicine in text:
-            medicines_found.append(medicine)
+    for medicine in medicine_database:
+        if medicine.lower() in text:
+            detected.append(medicine)
 
-    return medicines_found
+    words = re.findall(r"[A-Za-z]+", text)
 
-# --------------------------------------------------
-# UI
-# --------------------------------------------------
+    for word in words:
+        if len(word) > 4:
+            if word not in detected:
+                detected.append(word)
+
+    return list(dict.fromkeys(detected))
+
 st.title("💊 AI Medical Prescription Reader")
-
-st.markdown("""
-Upload a doctor's prescription image and let AI extract medicine names and dosage information.
-""")
 
 uploaded_file = st.file_uploader(
     "Upload Prescription Image",
     type=["png", "jpg", "jpeg"]
 )
 
-if uploaded_file is not None:
+if uploaded_file:
 
-    try:
-        image = Image.open(uploaded_file).convert("RGB")
+    image = Image.open(uploaded_file).convert("RGB")
 
-        col1, col2 = st.columns(2)
+    col1, col2 = st.columns(2)
 
-        with col1:
-            st.image(
-                image,
-                caption="Uploaded Prescription",
-                width=500
-            )
+    with col1:
+        st.image(image, caption="Uploaded Prescription", width=500)
 
-        with st.spinner("Reading prescription..."):
-            extracted_text = perform_ocr(image)
+    with st.spinner("Reading Prescription..."):
+        extracted_text, ocr_df = extract_text(image)
 
-        with col2:
-            st.subheader("Extracted Text")
-            st.text_area(
-                "OCR Result",
-                extracted_text,
-                height=350
-            )
-
-        st.divider()
-
-        medicines = extract_medicines(extracted_text)
-
-        st.subheader("Detected Medicines")
-
-        if medicines:
-
-            data = []
-
-            for med in medicines:
-                data.append({
-                    "Medicine": med.title(),
-                    "Usage": medicine_database[med]["usage"],
-                    "Dosage": medicine_database[med]["dosage"],
-                    "Warning": medicine_database[med]["warning"]
-                })
-
-            df = pd.DataFrame(data)
-
-            st.dataframe(df)
-
-            st.success(
-                f"{len(medicines)} medicine(s) detected successfully."
-            )
-
-        else:
-            st.warning(
-                "No medicines found in the built-in database."
-            )
-
-        st.divider()
-
-        st.subheader("Medical Disclaimer")
-
-        st.info(
-            "This application is for educational purposes only. "
-            "Always consult a qualified healthcare professional."
+    with col2:
+        st.subheader("Extracted Text")
+        st.text_area(
+            "OCR Result",
+            extracted_text,
+            height=400
         )
 
-    except Exception as e:
-        st.error(f"Image Processing Error: {e}")
+    st.subheader("OCR Detection Details")
+    st.dataframe(ocr_df, use_container_width=True)
 
-else:
-    st.info("Please upload a prescription image to begin.")
+    medicines = detect_medicines(extracted_text)
+
+    st.subheader("Detected Medicines")
+
+    if medicines:
+
+        result = []
+
+        for med in medicines:
+
+            med_lower = med.lower()
+
+            if med_lower in medicine_database:
+                result.append({
+                    "Medicine": med.title(),
+                    "Usage": medicine_database[med_lower][0],
+                    "Dosage": medicine_database[med_lower][1]
+                })
+            else:
+                result.append({
+                    "Medicine": med.title(),
+                    "Usage": "Not Available",
+                    "Dosage": "Not Available"
+                })
+
+        st.dataframe(
+            pd.DataFrame(result),
+            use_container_width=True
+        )
+
+    else:
+        st.warning("No medicines detected.")
+
+    st.subheader("Medical Disclaimer")
+
+    st.info(
+        "This tool is for educational purposes only. Always consult a healthcare professional before taking any medication."
+    )
