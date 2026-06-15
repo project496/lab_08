@@ -1,203 +1,77 @@
 import streamlit as st
-from PIL import Image
-import pytesseract
-import pandas as pd
-import tensorflow as tf
-import re
+import itertools
 import numpy as np
+import tensorflow as tf
+from tensorflow import keras
 
-# -------------------------
-# PAGE CONFIG
-# -------------------------
-st.set_page_config(
-    page_title="AI Medical Prescription Reader",
-    page_icon="💊",
-    layout="wide"
-)
+st.set_page_config(page_title="AI Scrabble Word Finder", layout="centered")
 
-# -------------------------
-# TITLE
-# -------------------------
-st.title("💊 AI Medical Prescription Reader")
-st.markdown(
-    """
-Upload a prescription image.
+SCRABBLE_SCORES = {
+    'a':1,'b':3,'c':3,'d':2,'e':1,'f':4,'g':2,'h':4,'i':1,'j':8,'k':5,'l':1,
+    'm':3,'n':1,'o':1,'p':3,'q':10,'r':1,'s':1,'t':1,'u':1,'v':4,'w':4,'x':8,'y':4,'z':10
+}
 
-The AI system will:
-- Extract text using OCR
-- Detect medicine names
-- Detect dosage information
-- Display structured results
-"""
-)
+WORD_LIST = [
+    "cat","dog","bird","word","world","data","python","code","scrabble","learn",
+    "plane","train","brain","rain","gain","main","paint","pair","air","fair",
+    "chair","hair","near","ear","gear","run","running","ring","sing","king",
+    "bring","string","thing","thinking","apple","apply","play","player","paper",
+    "tiger","lion","zebra","mouse","house","home","game","name","same","fame"
+]
 
-# -------------------------
-# LOAD TENSORFLOW MODEL
-# -------------------------
-# Dummy TensorFlow model to satisfy project requirement
-# Can later be replaced with a CNN prescription classifier
+def scrabble_score(word):
+    return sum(SCRABBLE_SCORES.get(c,0) for c in word.lower())
 
-model = tf.keras.Sequential([
-    tf.keras.layers.Input(shape=(224, 224, 3)),
-    tf.keras.layers.Conv2D(16, 3, activation="relu"),
-    tf.keras.layers.MaxPooling2D(),
-    tf.keras.layers.Flatten(),
-    tf.keras.layers.Dense(8, activation="relu"),
-    tf.keras.layers.Dense(1, activation="sigmoid")
+def word_to_vector(word):
+    vec = np.zeros(26)
+    for c in word.lower():
+        if c.isalpha():
+            vec[ord(c)-97] += 1
+    return vec
+
+X = np.array([word_to_vector(w) for w in WORD_LIST])
+y = np.array([scrabble_score(w) for w in WORD_LIST])
+
+model = keras.Sequential([
+    keras.layers.Dense(32, activation="relu", input_shape=(26,)),
+    keras.layers.Dense(16, activation="relu"),
+    keras.layers.Dense(1)
 ])
 
-# -------------------------
-# OCR FUNCTION
-# -------------------------
-def extract_text_from_image(image):
-    try:
-        text = pytesseract.image_to_string(image)
-        return text
-    except Exception as e:
-        return f"OCR Error: {e}"
+model.compile(optimizer="adam", loss="mse")
+model.fit(X, y, epochs=80, verbose=0)
 
-# -------------------------
-# MEDICINE EXTRACTION
-# -------------------------
-def extract_medicines(text):
+def generate_words(letters):
+    letters = letters.lower()
+    valid_words = set()
+    for i in range(2, len(letters)+1):
+        for perm in itertools.permutations(letters, i):
+            word = "".join(perm)
+            if word in WORD_LIST:
+                valid_words.add(word)
+    return list(valid_words)
 
-    dosage_patterns = [
-        r"\d+\s*mg",
-        r"\d+\s*ml",
-        r"\d+\s*mcg",
-        r"\d+\s*g"
-    ]
+st.title("AI Scrabble Word Finder")
 
-    lines = text.split("\n")
+letters = st.text_input("Enter letters")
 
-    medicines = []
+if st.button("Generate Words"):
+    if letters:
+        words = generate_words(letters)
 
-    for line in lines:
+        if not words:
+            st.warning("No valid words found.")
+        else:
+            results = []
+            for w in words:
+                score = scrabble_score(w)
+                ai_score = float(model.predict(word_to_vector(w).reshape(1,-1), verbose=0)[0][0])
+                results.append((w, score, ai_score))
 
-        line = line.strip()
+            results = sorted(results, key=lambda x: x[2], reverse=True)
 
-        if len(line) < 3:
-            continue
-
-        dosage = ""
-
-        for pattern in dosage_patterns:
-
-            match = re.search(pattern, line, re.IGNORECASE)
-
-            if match:
-                dosage = match.group()
-
-                medicine_name = line.replace(dosage, "").strip(
-                    " -:,.()[]"
-                )
-
-                medicines.append(
-                    {
-                        "Medicine": medicine_name,
-                        "Dosage": dosage
-                    }
-                )
-
-                break
-
-    unique = []
-
-    seen = set()
-
-    for item in medicines:
-
-        key = (
-            item["Medicine"].lower(),
-            item["Dosage"].lower()
-        )
-
-        if key not in seen:
-            unique.append(item)
-            seen.add(key)
-
-    return unique
-
-# -------------------------
-# FILE UPLOAD
-# -------------------------
-uploaded_file = st.file_uploader(
-    "Upload Prescription Image",
-    type=["png", "jpg", "jpeg"]
-)
-
-if uploaded_file is not None:
-
-    image = Image.open(uploaded_file)
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("Uploaded Prescription")
-        st.image(
-            image,
-            use_container_width=True
-        )
-
-    with st.spinner("Analyzing prescription..."):
-
-        extracted_text = extract_text_from_image(image)
-
-        medicines = extract_medicines(extracted_text)
-
-    with col2:
-
-        st.subheader("OCR Extracted Text")
-
-        st.text_area(
-            "Detected Text",
-            extracted_text,
-            height=350
-        )
-
-    st.divider()
-
-    st.subheader("💊 Medicines Detected")
-
-    if medicines:
-
-        df = pd.DataFrame(medicines)
-
-        st.dataframe(
-            df,
-            use_container_width=True
-        )
-
-        st.success(
-            f"{len(df)} medicine(s) detected."
-        )
-
+            st.subheader("Results")
+            for w, score, ai_score in results:
+                st.write(f"{w} | Score: {score} | AI Rank Score: {round(ai_score,2)}")
     else:
-
-        st.warning(
-            "No medicine information detected."
-        )
-
-    st.divider()
-
-    st.subheader("📋 Prescription Summary")
-
-    if medicines:
-
-        for med in medicines:
-
-            st.write(
-                f"✅ {med['Medicine']} — {med['Dosage']}"
-            )
-
-    else:
-
-        st.write("No medicines found.")
-
-# -------------------------
-# FOOTER
-# -------------------------
-st.markdown("---")
-st.caption(
-    "AI Medical Prescription Reader | TensorFlow + OCR + Streamlit"
-)
+        st.warning("Please enter letters")
