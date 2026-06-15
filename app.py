@@ -1,8 +1,8 @@
 import streamlit as st
-import itertools
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
+from collections import Counter
 
 st.set_page_config(page_title="AI Scrabble Word Finder", layout="centered")
 
@@ -22,6 +22,26 @@ WORD_LIST = [
 def scrabble_score(word):
     return sum(SCRABBLE_SCORES.get(c,0) for c in word.lower())
 
+def can_make(word, letters):
+    word_count = Counter(word)
+    letters_count = Counter(letters)
+    for ch in word_count:
+        if word_count[ch] > letters_count.get(ch, 0):
+            return False
+    return True
+
+def generate_words(letters):
+    letters = letters.lower()
+    valid_words = []
+
+    for word in WORD_LIST:
+        if can_make(word, letters):
+            valid_words.append(word)
+
+    return valid_words
+
+
+# Simple AI model (ranking only)
 def word_to_vector(word):
     vec = np.zeros(26)
     for c in word.lower():
@@ -41,19 +61,9 @@ model = keras.Sequential([
 model.compile(optimizer="adam", loss="mse")
 model.fit(X, y, epochs=80, verbose=0)
 
-def generate_words(letters):
-    letters = letters.lower()
-    valid_words = set()
-    for i in range(2, len(letters)+1):
-        for perm in itertools.permutations(letters, i):
-            word = "".join(perm)
-            if word in WORD_LIST:
-                valid_words.add(word)
-    return list(valid_words)
+st.title("AI Scrabble Word Finder (Smart Version)")
 
-st.title("AI Scrabble Word Finder")
-
-letters = st.text_input("Enter letters")
+letters = st.text_input("Enter letters (e.g. applerun)")
 
 if st.button("Generate Words"):
     if letters:
@@ -63,15 +73,17 @@ if st.button("Generate Words"):
             st.warning("No valid words found.")
         else:
             results = []
+
             for w in words:
                 score = scrabble_score(w)
                 ai_score = float(model.predict(word_to_vector(w).reshape(1,-1), verbose=0)[0][0])
                 results.append((w, score, ai_score))
 
-            results = sorted(results, key=lambda x: x[2], reverse=True)
+            results.sort(key=lambda x: x[2], reverse=True)
 
-            st.subheader("Results")
+            st.subheader("Best Scrabble Words")
+
             for w, score, ai_score in results:
-                st.write(f"{w} | Score: {score} | AI Rank Score: {round(ai_score,2)}")
+                st.write(f"{w} | Score: {score} | AI Rank: {round(ai_score,2)}")
     else:
-        st.warning("Please enter letters")
+        st.warning("Enter letters first")
