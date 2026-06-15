@@ -5,6 +5,9 @@ import pandas as pd
 from PIL import Image
 import pytesseract
 import re
+import os
+
+pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 st.set_page_config(
     page_title="AI Medical Prescription Reader",
@@ -29,50 +32,29 @@ medicine_database = {
 
 def preprocess_image(image):
     img = np.array(image)
-
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-
-    gray = cv2.resize(
-        gray,
-        None,
-        fx=2,
-        fy=2,
-        interpolation=cv2.INTER_CUBIC
-    )
-
+    gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
     gray = cv2.GaussianBlur(gray, (3, 3), 0)
-
     thresh = cv2.adaptiveThreshold(
-        gray,
-        255,
+        gray, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv2.THRESH_BINARY,
-        31,
-        11
+        31, 11
     )
-
     return thresh
 
 def extract_text(image):
     processed = preprocess_image(image)
-
     text = pytesseract.image_to_string(processed)
-
     data = []
-
     for line in text.split("\n"):
         line = line.strip()
-
         if len(line) > 0:
-            data.append({
-                "Detected Text": line
-            })
-
+            data.append({"Detected Text": line})
     return text, pd.DataFrame(data)
 
 def detect_medicines(text):
     medicines = []
-
     lower_text = text.lower()
 
     for med in medicine_database.keys():
@@ -102,27 +84,24 @@ if uploaded_file:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.image(image, caption="Prescription", width=500)
+        st.image(image, caption="Prescription", use_container_width=True)
 
-    with st.spinner("Processing..."):
-        extracted_text, ocr_df = extract_text(image)
+    with st.spinner("Processing OCR..."):
+
+        try:
+            extracted_text, ocr_df = extract_text(image)
+        except Exception as e:
+            st.error("OCR failed. Make sure Tesseract is installed.")
+            st.stop()
 
     with col2:
         st.subheader("Extracted Text")
-
-        st.text_area(
-            "OCR Result",
-            extracted_text,
-            height=350
-        )
+        st.text_area("OCR Result", extracted_text, height=350)
 
     st.subheader("OCR Detection Details")
 
     if not ocr_df.empty:
-        st.dataframe(
-            ocr_df,
-            use_container_width=True
-        )
+        st.dataframe(ocr_df, use_container_width=True)
     else:
         st.warning("No text detected.")
 
@@ -152,10 +131,7 @@ if uploaded_file:
                     "Dosage": "Unknown"
                 })
 
-        st.dataframe(
-            pd.DataFrame(result),
-            use_container_width=True
-        )
+        st.dataframe(pd.DataFrame(result), use_container_width=True)
 
     else:
         st.warning("No medicines detected.")
@@ -163,5 +139,5 @@ if uploaded_file:
     st.subheader("Medical Disclaimer")
 
     st.info(
-        "This application is for educational purposes only. Always consult a healthcare professional."
+        "This app is for educational purposes only. Always consult a healthcare professional."
     )
