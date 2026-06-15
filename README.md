@@ -40,3 +40,10 @@ An AI-powered Scrabble word generator that finds valid words from given letters 
 ---
 
 ## 📁 Project Structure
+AI-Scrabble-Word-Finder/
+│
+├── app.py # Main Streamlit app
+├── words.txt # Dictionary file (50k+ words recommended)
+├── requirements.txt # Dependencies
+└── README.md # Project documentation
+
