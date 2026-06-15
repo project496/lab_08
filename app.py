@@ -4,19 +4,28 @@ import cv2
 import numpy as np
 from PIL import Image
 import pandas as pd
-import re
 
+# --------------------------------------------------
+# Page Config
+# --------------------------------------------------
 st.set_page_config(
     page_title="AI Medical Prescription Reader",
     page_icon="💊",
     layout="wide"
 )
 
+# --------------------------------------------------
+# Load OCR Model
+# --------------------------------------------------
 @st.cache_resource
 def load_reader():
-    return easyocr.Reader(['en'])
+    return easyocr.Reader(['en'], gpu=False)
 
 reader = load_reader()
+
+# --------------------------------------------------
+# Medicine Database
+# --------------------------------------------------
 medicine_database = {
     "paracetamol": {
         "usage": "Pain relief and fever reduction",
@@ -50,7 +59,36 @@ medicine_database = {
     }
 }
 
+# --------------------------------------------------
+# OCR Function
+# --------------------------------------------------
+def perform_ocr(image):
+    try:
+        img_array = np.array(image)
+
+        if len(img_array.shape) == 3:
+            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+        else:
+            gray = img_array
+
+        result = reader.readtext(gray)
+
+        extracted_text = ""
+
+        for item in result:
+            extracted_text += item[1] + "\n"
+
+        return extracted_text
+
+    except Exception as e:
+        st.error(f"OCR Error: {e}")
+        return ""
+
+# --------------------------------------------------
+# Extract Medicines
+# --------------------------------------------------
 def extract_medicines(text):
+
     medicines_found = []
 
     text = text.lower()
@@ -61,27 +99,14 @@ def extract_medicines(text):
 
     return medicines_found
 
-
-def perform_ocr(image):
-    img_array = np.array(image)
-
-    if len(img_array.shape) == 3:
-        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-    else:
-        gray = img_array
-
-    result = reader.readtext(gray)
-
-    extracted_text = ""
-
-    for item in result:
-        extracted_text += item[1] + "\n"
-
-    return extracted_text
-
-
+# --------------------------------------------------
+# UI
+# --------------------------------------------------
 st.title("💊 AI Medical Prescription Reader")
-st.markdown("Upload a prescription image and extract medicine names using AI OCR.")
+
+st.markdown("""
+Upload a doctor's prescription image and let AI extract medicine names and dosage information.
+""")
 
 uploaded_file = st.file_uploader(
     "Upload Prescription Image",
@@ -90,70 +115,71 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
 
-    image = Image.open(uploaded_file)
+    try:
+        image = Image.open(uploaded_file).convert("RGB")
 
-    col1, col2 = st.columns(2)
+        col1, col2 = st.columns(2)
 
-    with col1:
-        st.image(image, caption="Uploaded Prescription", use_container_width=True)
+        with col1:
+            st.image(
+                image,
+                caption="Uploaded Prescription",
+                width=500
+            )
 
-    with st.spinner("Extracting text from prescription..."):
+        with st.spinner("Reading prescription..."):
+            extracted_text = perform_ocr(image)
 
-        extracted_text = perform_ocr(image)
+        with col2:
+            st.subheader("Extracted Text")
+            st.text_area(
+                "OCR Result",
+                extracted_text,
+                height=350
+            )
 
-    with col2:
-        st.subheader("Extracted Text")
-        st.text_area(
-            "OCR Output",
-            extracted_text,
-            height=350
+        st.divider()
+
+        medicines = extract_medicines(extracted_text)
+
+        st.subheader("Detected Medicines")
+
+        if medicines:
+
+            data = []
+
+            for med in medicines:
+                data.append({
+                    "Medicine": med.title(),
+                    "Usage": medicine_database[med]["usage"],
+                    "Dosage": medicine_database[med]["dosage"],
+                    "Warning": medicine_database[med]["warning"]
+                })
+
+            df = pd.DataFrame(data)
+
+            st.dataframe(df)
+
+            st.success(
+                f"{len(medicines)} medicine(s) detected successfully."
+            )
+
+        else:
+            st.warning(
+                "No medicines found in the built-in database."
+            )
+
+        st.divider()
+
+        st.subheader("Medical Disclaimer")
+
+        st.info(
+            "This application is for educational purposes only. "
+            "Always consult a qualified healthcare professional."
         )
 
-    st.divider()
-
-    medicines = extract_medicines(extracted_text)
-
-    st.subheader("Detected Medicines")
-
-    if medicines:
-
-        table_data = []
-
-        for med in medicines:
-
-            table_data.append({
-                "Medicine": med.title(),
-                "Usage": medicine_database[med]["usage"],
-                "Dosage": medicine_database[med]["dosage"],
-                "Warning": medicine_database[med]["warning"]
-            })
-
-        df = pd.DataFrame(table_data)
-
-        st.dataframe(
-            df,
-            use_container_width=True
-        )
-
-        st.success(f"{len(medicines)} medicine(s) detected.")
-
-    else:
-        st.warning(
-            "No known medicines detected from the database."
-        )
-
-    st.divider()
-
-    st.subheader("Prescription Summary")
-
-    st.write(
-        """
-        ⚠️ This tool is for educational purposes only.
-
-        Always consult a qualified healthcare professional before
-        taking any medication.
-        """
-    )
+    except Exception as e:
+        st.error(f"Image Processing Error: {e}")
 
 else:
-    st.info("Upload a prescription image to begin.")
+    st.info("Please upload a prescription image to begin.")
