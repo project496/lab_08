@@ -1,7 +1,7 @@
 streamlit==1.39.0
-easyocr==1.7.1
 opencv-python-headless==4.10.0.84
 numpy==1.26.4
 pandas==2.2.2
 pillow==10.4.0
+pytesseract==0.3.10
 tensorflow==2.17.0
