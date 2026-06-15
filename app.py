@@ -12,18 +12,11 @@ st.set_page_config(
     layout="wide"
 )
 
-# -----------------------------
-# Load OCR Model
-# -----------------------------
 @st.cache_resource
 def load_reader():
     return easyocr.Reader(['en'])
 
 reader = load_reader()
-
-# -----------------------------
-# Medicine Database
-# -----------------------------
 medicine_database = {
     "paracetamol": {
         "usage": "Pain relief and fever reduction",
@@ -57,9 +50,6 @@ medicine_database = {
     }
 }
 
-# -----------------------------
-# Extract Medicines
-# -----------------------------
 def extract_medicines(text):
     medicines_found = []
 
@@ -71,9 +61,7 @@ def extract_medicines(text):
 
     return medicines_found
 
-# -----------------------------
-# OCR Function
-# -----------------------------
+
 def perform_ocr(image):
     img_array = np.array(image)
 
@@ -91,9 +79,7 @@ def perform_ocr(image):
 
     return extracted_text
 
-# -----------------------------
-# UI
-# -----------------------------
+
 st.title("💊 AI Medical Prescription Reader")
 st.markdown("Upload a prescription image and extract medicine names using AI OCR.")
 
