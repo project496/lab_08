@@ -1,8 +1,8 @@
 import streamlit as st
+import itertools
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-from collections import Counter
 
 st.set_page_config(page_title="AI Scrabble Word Finder", layout="centered")
 
@@ -22,13 +22,31 @@ WORD_LIST = [
 def scrabble_score(word):
     return sum(SCRABBLE_SCORES.get(c,0) for c in word.lower())
 
+def word_features(word):
+    vec = np.zeros(28)
+
+    for c in word.lower():
+        if c.isalpha():
+            vec[ord(c)-97] += 1
+
+    vec[26] = len(word)
+
+    vowels = sum(1 for c in word.lower() if c in "aeiou")
+    vec[27] = vowels / max(len(word), 1)
+
+    return vec
+
+
 def can_make(word, letters):
+    from collections import Counter
     word_count = Counter(word)
     letters_count = Counter(letters)
+
     for ch in word_count:
         if word_count[ch] > letters_count.get(ch, 0):
             return False
     return True
+
 
 def generate_words(letters):
     letters = letters.lower()
@@ -41,32 +59,35 @@ def generate_words(letters):
     return valid_words
 
 
-# Simple AI model (ranking only)
-def word_to_vector(word):
-    vec = np.zeros(26)
-    for c in word.lower():
-        if c.isalpha():
-            vec[ord(c)-97] += 1
-    return vec
+# ================= AI MODEL =================
 
-X = np.array([word_to_vector(w) for w in WORD_LIST])
-y = np.array([scrabble_score(w) for w in WORD_LIST])
+X = np.array([word_features(w) for w in WORD_LIST])
+
+y = np.array([
+    scrabble_score(w) * 1.2 + len(w) * 0.5
+    for w in WORD_LIST
+])
 
 model = keras.Sequential([
-    keras.layers.Dense(32, activation="relu", input_shape=(26,)),
+    keras.layers.Dense(64, activation="relu", input_shape=(28,)),
+    keras.layers.Dense(32, activation="relu"),
     keras.layers.Dense(16, activation="relu"),
     keras.layers.Dense(1)
 ])
 
 model.compile(optimizer="adam", loss="mse")
-model.fit(X, y, epochs=80, verbose=0)
+model.fit(X, y, epochs=150, verbose=0)
 
-st.title("AI Scrabble Word Finder (Smart Version)")
 
-letters = st.text_input("Enter letters (e.g. applerun)")
+# ================= UI =================
+
+st.title("🧠 AI Scrabble Word Finder (Advanced Version)")
+
+letters = st.text_input("Enter letters (example: applerun)")
 
 if st.button("Generate Words"):
     if letters:
+
         words = generate_words(letters)
 
         if not words:
@@ -76,14 +97,19 @@ if st.button("Generate Words"):
 
             for w in words:
                 score = scrabble_score(w)
-                ai_score = float(model.predict(word_to_vector(w).reshape(1,-1), verbose=0)[0][0])
+
+                ai_score = float(
+                    model.predict(word_features(w).reshape(1,-1), verbose=0)[0][0]
+                )
+
                 results.append((w, score, ai_score))
 
             results.sort(key=lambda x: x[2], reverse=True)
 
-            st.subheader("Best Scrabble Words")
+            st.subheader("🏆 Best AI Ranked Words")
 
             for w, score, ai_score in results:
                 st.write(f"{w} | Score: {score} | AI Rank: {round(ai_score,2)}")
+
     else:
-        st.warning("Enter letters first")
+        st.warning("Please enter letters")
